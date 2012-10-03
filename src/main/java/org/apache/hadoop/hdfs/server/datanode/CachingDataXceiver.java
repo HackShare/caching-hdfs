@@ -232,7 +232,7 @@ class CachingDataXceiver extends Receiver implements Runnable {
 			Op.READ_BLOCK, BlockTokenSecretManager.AccessMode.READ);
 
 		// send the block
-		BlockSender blockSender = null;
+		CachingBlockSender blockSender = null;
 		DatanodeRegistration dnR =
 			datanode.getDNRegistrationForBP(block.getBlockPoolId());
 		final String clientTraceFmt =
@@ -246,7 +246,7 @@ class CachingDataXceiver extends Receiver implements Runnable {
 		updateCurrentThreadName("Sending block " + block);
 		try {
 			try {
-				blockSender = new BlockSender(block, blockOffset, length,
+				blockSender = new CachingBlockSender(block, blockOffset, length,
 					true, false, datanode, clientTraceFmt);
 			} catch (IOException e) {
 				String msg = "opReadBlock " + block + " received exception " + e;
@@ -616,14 +616,13 @@ class CachingDataXceiver extends Receiver implements Runnable {
 			return;
 		}
 
-		BlockSender blockSender = null;
+		CachingBlockSender blockSender = null;
 		DataOutputStream reply = null;
 		boolean isOpSuccess = true;
 
 		try {
 			// check if the block exists or not
-			blockSender = new BlockSender(block, 0, -1, false, false, datanode,
-				null);
+			blockSender = new CachingBlockSender(block, 0, -1, false, false, datanode, null);
 
 			// set up response stream
 			OutputStream baseStream = NetUtils.getOutputStream(
@@ -821,7 +820,7 @@ class CachingDataXceiver extends Receiver implements Runnable {
 		out.flush();
 	}
 
-	private void writeSuccessWithChecksumInfo(BlockSender blockSender,
+	private void writeSuccessWithChecksumInfo(CachingBlockSender blockSender,
 			DataOutputStream out) throws IOException {
 
 		ReadOpChecksumInfoProto ckInfo = ReadOpChecksumInfoProto.newBuilder()
