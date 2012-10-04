@@ -34,8 +34,14 @@ import org.apache.hadoop.util.Daemon;
  */
 class CachingDataXceiverServer extends DataXceiverServer {
 
-	CachingDataXceiverServer(final ServerSocket ss, final Configuration conf, final DataNode datanode) {
+	private final BlockCache blockCache;
+
+	CachingDataXceiverServer(final ServerSocket ss, final Configuration conf, final DataNode datanode,
+			final BlockCache blockCache) {
+
 		super(ss, conf, datanode);
+
+		this.blockCache = blockCache;
 	}
 
 	@Override
@@ -57,7 +63,7 @@ class CachingDataXceiverServer extends DataXceiverServer {
 				}
 
 				new Daemon(datanode.threadGroup,
-					CachingDataXceiver.create(s, datanode, this))
+					CachingDataXceiver.create(s, datanode, this, this.blockCache))
 					.start();
 			} catch (SocketTimeoutException ignored) {
 				// wake up to see if should continue to run

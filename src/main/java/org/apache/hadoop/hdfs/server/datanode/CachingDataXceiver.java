@@ -90,6 +90,8 @@ class CachingDataXceiver extends Receiver implements Runnable {
 
 	private final CachingDataXceiverServer dataXceiverServer;
 
+	private final BlockCache blockCache;
+
 	private long opStartTime; // the start time of receiving an Op
 
 	private final SocketInputWrapper socketInputWrapper;
@@ -100,17 +102,16 @@ class CachingDataXceiver extends Receiver implements Runnable {
 	 */
 	private String previousOpClientName;
 
-	public static CachingDataXceiver create(Socket s, DataNode dn,
-			CachingDataXceiverServer dataXceiverServer) throws IOException {
+	public static CachingDataXceiver create(Socket s, DataNode dn, CachingDataXceiverServer dataXceiverServer,
+			BlockCache blockCache) throws IOException {
 
 		SocketInputWrapper iw = NetUtils.getInputStream(s);
-		return new CachingDataXceiver(s, iw, dn, dataXceiverServer);
+		return new CachingDataXceiver(s, iw, dn, dataXceiverServer, blockCache);
 	}
 
-	private CachingDataXceiver(Socket s,
-			SocketInputWrapper socketInput,
-			DataNode datanode,
-			CachingDataXceiverServer dataXceiverServer) throws IOException {
+	private CachingDataXceiver(Socket s, SocketInputWrapper socketInput, DataNode datanode,
+			CachingDataXceiverServer dataXceiverServer, BlockCache blockCache) throws IOException {
+
 		super(new DataInputStream(new BufferedInputStream(
 			socketInput, HdfsConstants.SMALL_BUFFER_SIZE)));
 
@@ -120,6 +121,7 @@ class CachingDataXceiver extends Receiver implements Runnable {
 		this.datanode = datanode;
 		this.dnConf = datanode.getDnConf();
 		this.dataXceiverServer = dataXceiverServer;
+		this.blockCache = blockCache;
 		remoteAddress = s.getRemoteSocketAddress().toString();
 		localAddress = s.getLocalSocketAddress().toString();
 
@@ -246,7 +248,7 @@ class CachingDataXceiver extends Receiver implements Runnable {
 		updateCurrentThreadName("Sending block " + block);
 		try {
 			try {
-				blockSender = new CachingBlockSender(block, blockOffset, length,
+				blockSender = new CachingBlockSender(this.blockCache, block, blockOffset, length,
 					true, false, datanode, clientTraceFmt);
 			} catch (IOException e) {
 				String msg = "opReadBlock " + block + " received exception " + e;
@@ -622,7 +624,7 @@ class CachingDataXceiver extends Receiver implements Runnable {
 
 		try {
 			// check if the block exists or not
-			blockSender = new CachingBlockSender(block, 0, -1, false, false, datanode, null);
+			blockSender = new CachingBlockSender(this.blockCache, block, 0, -1, false, false, datanode, null);
 
 			// set up response stream
 			OutputStream baseStream = NetUtils.getOutputStream(

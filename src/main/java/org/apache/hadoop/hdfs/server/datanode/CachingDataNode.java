@@ -90,6 +90,8 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 
 	private final DNConf dnConf;
 
+	private final BlockCache blockCache;
+
 	static {
 		HdfsConfiguration.init();
 	}
@@ -99,6 +101,7 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 
 		this.dataNode = new DataNode(conf, dataDirs, resources);
 		this.dnConf = new DNConf(conf);
+		this.blockCache = new BlockCache();
 		reconfigureIpcServer(conf);
 		reconfigureDataXceiver(conf);
 	}
@@ -186,7 +189,7 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 
 		this.dataNode.threadGroup = new ThreadGroup("cachingDataXceiverServer");
 		this.dataNode.dataXceiverServer = new Daemon(this.dataNode.threadGroup,
-			new CachingDataXceiverServer(newServerSocket, conf, this.dataNode));
+			new CachingDataXceiverServer(newServerSocket, conf, this.dataNode, this.blockCache));
 		this.dataNode.threadGroup.setDaemon(true); // auto destroy when empty
 	}
 

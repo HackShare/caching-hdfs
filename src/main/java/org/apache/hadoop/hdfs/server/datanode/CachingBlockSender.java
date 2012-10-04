@@ -119,6 +119,8 @@ class CachingBlockSender implements java.io.Closeable {
 	private static final int TRANSFERTO_BUFFER_SIZE = Math.max(HdfsConstants.IO_FILE_BUFFER_SIZE,
 		MIN_BUFFER_WITH_TRANSFERTO);
 
+	private final BlockCache blockCache;
+
 	/**
 	 * The block to read from
 	 */
@@ -245,10 +247,11 @@ class CachingBlockSender implements java.io.Closeable {
 	 *        format string used to print client trace logs
 	 * @throws IOException
 	 */
-	CachingBlockSender(final ExtendedBlock block, final long startOffset, long length,
+	CachingBlockSender(final BlockCache blockCache, final ExtendedBlock block, final long startOffset, long length,
 			final boolean corruptChecksumOk, final boolean verifyChecksum, final DataNode datanode,
 			final String clientTraceFmt) throws IOException {
 
+		this.blockCache = blockCache;
 		this.block = block;
 		this.corruptChecksumOk = corruptChecksumOk;
 		this.verifyChecksum = verifyChecksum;
