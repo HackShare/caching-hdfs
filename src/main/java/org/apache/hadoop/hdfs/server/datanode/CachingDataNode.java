@@ -72,6 +72,13 @@ import org.apache.log4j.BasicConfigurator;
 
 import com.google.protobuf.BlockingService;
 
+import edu.berkeley.icsi.memngt.protocols.ClientToDaemonProtocol;
+import edu.berkeley.icsi.memngt.protocols.DaemonToClientProtocol;
+import edu.berkeley.icsi.memngt.protocols.NegotiationException;
+import edu.berkeley.icsi.memngt.protocols.ProcessType;
+import edu.berkeley.icsi.memngt.rpc.RPCService;
+import edu.berkeley.icsi.memngt.utils.ClientUtils;
+
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_HANDLER_COUNT_DEFAULT;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_HANDLER_COUNT_KEY;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_IPC_ADDRESS_KEY;
@@ -82,7 +89,12 @@ import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_USER_NAME_KEY;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_DATA_DIR_PERMISSION_KEY;
 import static org.apache.hadoop.hdfs.DFSConfigKeys.DFS_DATANODE_DATA_DIR_PERMISSION_DEFAULT;
 
-public final class CachingDataNode implements ClientDatanodeProtocol, InterDatanodeProtocol {
+public final class CachingDataNode implements ClientDatanodeProtocol, InterDatanodeProtocol, DaemonToClientProtocol {
+
+	/**
+	 * The port the RPC service of the local memory negotiator listens on.
+	 */
+	private static final int MEMORY_NEGOTIATOR_RPC_PORT = 8010;
 
 	public static final Log LOG = LogFactory.getLog(CachingDataNode.class);
 
@@ -91,6 +103,8 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 	private final DNConf dnConf;
 
 	private final BlockCache blockCache;
+
+	private final RPCService rpcService;
 
 	static {
 		HdfsConfiguration.init();
@@ -101,7 +115,26 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 
 		this.dataNode = new DataNode(conf, dataDirs, resources);
 		this.dnConf = new DNConf(conf);
-		this.blockCache = new BlockCache();
+
+		// initialize the RPC connection to the memory
+		this.rpcService = new RPCService(MEMORY_NEGOTIATOR_RPC_PORT);
+		this.rpcService.setProtocolCallbackHandler(DaemonToClientProtocol.class, this);
+
+		ClientToDaemonProtocol proxy = this.rpcService.getProxy(new InetSocketAddress(8009),
+			ClientToDaemonProtocol.class);
+
+		int grantedMemoryShare;
+		try {
+			grantedMemoryShare = proxy.registerClient("Caching HDFS", ClientUtils.getPID(),
+				this.rpcService.getRPCPort(),
+				ProcessType.INFRASTRUCTURE_PROCESS);
+		} catch (NegotiationException ne) {
+			LOG.error(ne);
+			throw new IOException(ne);
+		}
+
+		this.blockCache = new BlockCache(grantedMemoryShare);
+
 		reconfigureIpcServer(conf);
 		reconfigureDataXceiver(conf);
 	}
@@ -223,7 +256,12 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 	}
 
 	public void join() {
-		this.dataNode.join();
+
+		try {
+			this.dataNode.join();
+		} finally {
+			this.rpcService.shutDown();
+		}
 	}
 
 	/**
@@ -386,6 +424,9 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 		return dirs;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public long getReplicaVisibleLength(final ExtendedBlock b) throws IOException {
 
@@ -396,49 +437,78 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 		return this.dataNode.getReplicaVisibleLength(b);
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public void refreshNamenodes() throws IOException {
 
 		LOG.warn("CALL");
 
-		System.out.println("Call");
+		this.dataNode.refreshNamenodes();
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
-	public void deleteBlockPool(String bpid, boolean force) throws IOException {
+	public void deleteBlockPool(final String bpid, final boolean force) throws IOException {
 
 		LOG.warn("CALL");
 
-		System.out.println("Call");
+		this.dataNode.deleteBlockPool(bpid, force);
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
-	public BlockLocalPathInfo getBlockLocalPathInfo(ExtendedBlock block, Token<BlockTokenIdentifier> token)
+	public BlockLocalPathInfo getBlockLocalPathInfo(final ExtendedBlock block, final Token<BlockTokenIdentifier> token)
 			throws IOException {
 
 		LOG.warn("CALL");
 
-		System.out.println("Call");
-		return null;
+		return this.dataNode.getBlockLocalPathInfo(block, token);
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
-	public ReplicaRecoveryInfo initReplicaRecovery(RecoveringBlock rBlock) throws IOException {
+	public ReplicaRecoveryInfo initReplicaRecovery(final RecoveringBlock rBlock) throws IOException {
 
 		LOG.warn("CALL");
 
-		System.out.println("Call");
-
-		return null;
+		return this.dataNode.initReplicaRecovery(rBlock);
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
-	public String updateReplicaUnderRecovery(ExtendedBlock oldBlock, long recoveryId, long newLength)
+	public String updateReplicaUnderRecovery(final ExtendedBlock oldBlock, final long recoveryId, final long newLength)
 			throws IOException {
 
 		LOG.warn("CALL");
 
-		System.out.println("Call");
-		return null;
+		return this.dataNode.updateReplicaUnderRecovery(oldBlock, recoveryId, newLength);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void grantedMemoryShareChanged(final int sizeOfNewGrantedShare) throws IOException {
+
+		this.blockCache.additionalMemoryOffered(sizeOfNewGrantedShare);
+	}
+
+	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public int additionalMemoryOffered(final int amountOfAdditionalMemory) throws IOException {
+
+		return this.blockCache.additionalMemoryOffered(amountOfAdditionalMemory);
 	}
 }
