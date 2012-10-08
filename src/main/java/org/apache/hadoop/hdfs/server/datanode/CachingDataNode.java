@@ -229,6 +229,7 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 	public static void main(final String args[]) {
 
 		BasicConfigurator.configure();
+		ClientUtils.checkCompatibility();
 		final Configuration conf = new Configuration();
 		conf.set("dfs.namenode.rpc-address", "localhost:8000");
 
@@ -500,6 +501,8 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 	@Override
 	public void grantedMemoryShareChanged(final int sizeOfNewGrantedShare) throws IOException {
 
+		waitForBlockCacheToBecomeAvailable();
+
 		this.blockCache.additionalMemoryOffered(sizeOfNewGrantedShare);
 	}
 
@@ -509,6 +512,19 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 	@Override
 	public int additionalMemoryOffered(final int amountOfAdditionalMemory) throws IOException {
 
+		waitForBlockCacheToBecomeAvailable();
+
 		return this.blockCache.additionalMemoryOffered(amountOfAdditionalMemory);
+	}
+
+	private void waitForBlockCacheToBecomeAvailable() throws IOException {
+
+		try {
+			while (this.blockCache == null) {
+				Thread.sleep(1L);
+			}
+		} catch (InterruptedException e) {
+			throw new IOException(e);
+		}
 	}
 }

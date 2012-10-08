@@ -18,8 +18,6 @@
 package org.apache.hadoop.hdfs.server.datanode;
 
 import java.io.IOException;
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
 import java.util.ArrayDeque;
 
 import org.apache.commons.logging.Log;
@@ -38,9 +36,17 @@ public final class BlockCache implements DaemonToClientProtocol {
 
 	private final ArrayDeque<byte[]> freeSegments = new ArrayDeque<byte[]>();
 
+	private final int safetyMargin;
+
+	private final int pid;
+
 	private int grantedMemoryShare;
 
 	BlockCache(final int grantedMemoryShare) {
+
+		this.pid = ClientUtils.getPID();
+		this.safetyMargin = ClientUtils.getMinHeapFreeRatio();
+
 		this.grantedMemoryShare = grantedMemoryShare;
 
 		synchronized (this) {
@@ -56,16 +62,14 @@ public final class BlockCache implements DaemonToClientProtocol {
 
 		LOG.debug("Adapting memory resources");
 
-		final int pid = ClientUtils.getPID();
-
 		int added = 0;
-		while (ClientUtils.getPhysicalMemorySize(pid) < this.grantedMemoryShare) {
+		while (ClientUtils.getPhysicalMemorySize(this.pid) < this.grantedMemoryShare) {
 			this.freeSegments.add(new byte[PAGE_SIZE]);
 			++added;
 		}
 
 		int removed = 0;
-		while (ClientUtils.getPhysicalMemorySize(pid) > this.grantedMemoryShare) {
+		while (ClientUtils.getPhysicalMemorySize(this.pid) > this.grantedMemoryShare) {
 			for (int i = 0; i < ADAPTATION_GRANULARITY; ++i) {
 				this.freeSegments.poll();
 				++removed;
@@ -84,12 +88,12 @@ public final class BlockCache implements DaemonToClientProtocol {
 			System.gc();
 		}
 
-		if (ClientUtils.getPhysicalMemorySize(pid) > this.grantedMemoryShare) {
+		if (ClientUtils.getPhysicalMemorySize(this.pid) > this.grantedMemoryShare) {
 			LOG.info("Need to relinquish more memory ");
 		}
 
 		if (LOG.isInfoEnabled()) {
-			LOG.info("Physical memory size is " + ClientUtils.getPhysicalMemorySize(pid) +
+			LOG.info("Physical memory size is " + ClientUtils.getPhysicalMemorySize(this.pid) +
 				", granted memory share is " + this.grantedMemoryShare + " (added " + added +
 				" memory segments, reliquished " + removed + ", now " + this.freeSegments.size()
 				+ " free pages are available)");
@@ -114,11 +118,30 @@ public final class BlockCache implements DaemonToClientProtocol {
 	@Override
 	public synchronized int additionalMemoryOffered(final int amountOfAdditionalMemory) throws IOException {
 
-		/**final MemoryMXBean memMXBean = ManagementFactory.getMemoryMXBean();
-		System.out.println("----------------------------------------------------------- "
-			+ memMXBean.getHeapMemoryUsage().getMax());**/
+		int maxUsableMem = ClientUtils.getMaximumUsableMemory();
+		if (maxUsableMem == -1) {
+			LOG.error("Cannot determine maximum amount of usable memory");
+			return 0;
+		}
 
-		return 0;
+		// Calculate the amount of additional memory that is actually usable
+		maxUsableMem = Math.round((float) maxUsableMem * (float) (100 - this.safetyMargin) / 100.0f);
+		maxUsableMem -= ClientUtils.getPhysicalMemorySize(this.pid);
+
+		System.out.println("Offered " + amountOfAdditionalMemory + ", usable " + maxUsableMem);
+
+		maxUsableMem = Math.min(maxUsableMem, amountOfAdditionalMemory);
+		if (maxUsableMem < (PAGE_SIZE * ADAPTATION_GRANULARITY / 1024)) {
+			LOG.info("Amount of additionally usable memory is below adaptation granularity, rejecting offer...");
+			return 0;
+		}
+
+		this.grantedMemoryShare += maxUsableMem;
+
+		LOG.info("Accepting " + maxUsableMem + " kilobytes of additional memory");
+
+		adaptMemoryResources();
+
+		return maxUsableMem;
 	}
-
 }
