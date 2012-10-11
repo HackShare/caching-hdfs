@@ -106,6 +106,8 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 
 	private final RPCService rpcService;
 
+	private final int pid;
+
 	static {
 		HdfsConfiguration.init();
 	}
@@ -116,6 +118,8 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 		this.dataNode = new DataNode(conf, dataDirs, resources);
 		this.dnConf = new DNConf(conf);
 
+		this.pid = ClientUtils.getPID();
+
 		// initialize the RPC connection to the memory
 		this.rpcService = new RPCService(MEMORY_NEGOTIATOR_RPC_PORT);
 		this.rpcService.setProtocolCallbackHandler(DaemonToClientProtocol.class, this);
@@ -125,8 +129,7 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 
 		int grantedMemoryShare;
 		try {
-			grantedMemoryShare = proxy.registerClient("Caching HDFS", ClientUtils.getPID(),
-				this.rpcService.getRPCPort(),
+			grantedMemoryShare = proxy.registerClient("Caching HDFS", this.pid, this.rpcService.getRPCPort(),
 				ProcessType.INFRASTRUCTURE_PROCESS);
 		} catch (NegotiationException ne) {
 			LOG.error(ne);
@@ -503,7 +506,9 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 
 		waitForBlockCacheToBecomeAvailable();
 
-		this.blockCache.additionalMemoryOffered(sizeOfNewGrantedShare);
+		LOG.info("Received request to adjust granted memory share to " + sizeOfNewGrantedShare + " kilobytes");
+
+		this.blockCache.increaseGrantedShareAndAdjust(sizeOfNewGrantedShare - this.blockCache.getGrantedMemorySize());
 	}
 
 	/**
@@ -514,7 +519,20 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 
 		waitForBlockCacheToBecomeAvailable();
 
-		return this.blockCache.additionalMemoryOffered(amountOfAdditionalMemory);
+		int maxUsableMem = ClientUtils.getMaximumUsableMemory();
+		if (maxUsableMem == -1) {
+			LOG.error("Cannot determine maximum amount of usable memory");
+			return 0;
+		}
+
+		// Subtract the amount of memory we are already using
+		maxUsableMem -= ClientUtils.getPhysicalMemorySize(this.pid);
+
+		maxUsableMem = Math.min(maxUsableMem, amountOfAdditionalMemory);
+
+		this.blockCache.increaseGrantedShareAndAdjust(maxUsableMem);
+
+		return maxUsableMem;
 	}
 
 	private void waitForBlockCacheToBecomeAvailable() throws IOException {
