@@ -17,12 +17,19 @@
  */
 package org.apache.hadoop.hdfs.server.datanode;
 
+import java.util.HashMap;
+import java.util.Map;
+
+import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
+
 import edu.berkeley.icsi.memngt.pools.AbstractMemoryPool;
 import edu.berkeley.icsi.memngt.utils.ClientUtils;
 
 public final class BlockCache extends AbstractMemoryPool<byte[]> {
 
 	private final int pageSize;
+
+	private final Map<ExtendedBlock, Object> cachedBlocks = new HashMap<ExtendedBlock, Object>();
 
 	BlockCache(int pageSize) {
 		super("DataNode Memory Pool", calculatePoolCapacity(pageSize / 1024), pageSize / 1024);
@@ -40,5 +47,10 @@ public final class BlockCache extends AbstractMemoryPool<byte[]> {
 	@Override
 	protected byte[] allocatedNewBuffer() {
 		return new byte[this.pageSize];
+	}
+
+	boolean lock(final ExtendedBlock block) {
+
+		return this.cachedBlocks.containsKey(block);
 	}
 }
