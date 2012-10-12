@@ -68,7 +68,6 @@ import org.apache.hadoop.util.StringUtils;
 
 import org.apache.hadoop.metrics2.lib.DefaultMetricsSystem;
 import org.apache.hadoop.net.NetUtils;
-import org.apache.log4j.BasicConfigurator;
 
 import com.google.protobuf.BlockingService;
 
@@ -95,6 +94,11 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 	 * The port the RPC service of the local memory negotiator listens on.
 	 */
 	private static final int MEMORY_NEGOTIATOR_RPC_PORT = 8010;
+
+	/**
+	 * The minimum amount of additional memory to accept from the negotiator daemon in kilobytes.
+	 */
+	private static final int MINIMUM_AMOUNT_OF_MEMORY_TO_ACCEPT = 64 * 1024;
 
 	public static final Log LOG = LogFactory.getLog(CachingDataNode.class);
 
@@ -231,7 +235,6 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 
 	public static void main(final String args[]) {
 
-		BasicConfigurator.configure();
 		ClientUtils.checkCompatibility();
 		final Configuration conf = new Configuration();
 		conf.set("dfs.namenode.rpc-address", "localhost:8000");
@@ -529,6 +532,10 @@ public final class CachingDataNode implements ClientDatanodeProtocol, InterDatan
 		maxUsableMem -= ClientUtils.getPhysicalMemorySize(this.pid);
 
 		maxUsableMem = Math.min(maxUsableMem, amountOfAdditionalMemory);
+
+		if (maxUsableMem < MINIMUM_AMOUNT_OF_MEMORY_TO_ACCEPT) {
+			return -1;
+		}
 
 		this.blockCache.increaseGrantedShareAndAdjust(maxUsableMem);
 
