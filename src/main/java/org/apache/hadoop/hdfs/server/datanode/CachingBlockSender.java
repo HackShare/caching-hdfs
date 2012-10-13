@@ -376,7 +376,18 @@ class CachingBlockSender implements java.io.Closeable {
 			if (DataNode.LOG.isDebugEnabled()) {
 				DataNode.LOG.debug("replica=" + replica);
 			}
-			this.blockIn = datanode.data.getBlockInputStream(block, this.offset); // seek to offset
+
+			final CachedBlock cachedBlock = this.blockCache.lock(block);
+			if (cachedBlock != null) {
+				System.out.println(block + " read from cache");
+				this.blockIn = new CachedInputStream(block, this.blockCache, cachedBlock);
+				this.blockIn.skip(this.offset);
+			} else {
+				System.out.println(block + " read from disk");
+				this.blockIn = new CachingInputStream(block, this.blockCache, datanode.data.getBlockInputStream(block,
+					this.offset), this.offset == 0L);
+			}
+
 			if (this.blockIn instanceof FileInputStream) {
 				this.blockInFd = ((FileInputStream) blockIn).getFD();
 			} else {
@@ -693,7 +704,7 @@ class CachingBlockSender implements java.io.Closeable {
 		}
 
 		// Trigger readahead of beginning of file if configured.
-		manageOsCache();
+		manageOsCache(); // TODO: Take a closer look at this
 
 		final long startTime = ClientTraceLog.isInfoEnabled() ? System.nanoTime() : 0;
 		try {
