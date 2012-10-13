@@ -1,16 +1,38 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.hadoop.hdfs.server.datanode;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Iterator;
+
+import org.apache.hadoop.hdfs.protocol.ExtendedBlock;
 
 public class CachingInputStream extends InputStream {
+
+	private final ExtendedBlock block;
 
 	private final BlockCache blockCache;
 
 	private final InputStream inputStream;
 
-	private final ArrayDeque<byte[]> cachedBuffers = new ArrayDeque<byte[]>();
+	private final ArrayList<byte[]> cachedBuffers = new ArrayList<byte[]>();
 
 	private boolean addToCache;
 
@@ -20,7 +42,9 @@ public class CachingInputStream extends InputStream {
 
 	private boolean readMinusOne = false;
 
-	CachingInputStream(final BlockCache blockCache, final InputStream inputStream, final boolean addToCache) {
+	CachingInputStream(final ExtendedBlock block, final BlockCache blockCache, final InputStream inputStream,
+			final boolean addToCache) {
+		this.block = block;
 		this.blockCache = blockCache;
 		this.inputStream = inputStream;
 		this.addToCache = addToCache;
@@ -28,18 +52,29 @@ public class CachingInputStream extends InputStream {
 
 	private final void clearCachedBuffers() {
 
-		while (!this.cachedBuffers.isEmpty()) {
-			this.blockCache.returnBuffer(this.cachedBuffers.poll());
+		final Iterator<byte[]> it = this.cachedBuffers.iterator();
+		while (it.hasNext()) {
+			this.blockCache.returnBuffer(it.next());
+		}
+		this.blockCache.clear();
+
+		if (this.currentBuffer != null) {
+			this.blockCache.returnBuffer(this.currentBuffer);
+			this.currentBuffer = null;
 		}
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public int available() {
-		System.out.println("Available");
-
-		return 0;
+		throw new UnsupportedOperationException("Available");
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public void close() throws IOException {
 
@@ -58,40 +93,49 @@ public class CachingInputStream extends InputStream {
 		}
 
 		if (!this.cachedBuffers.isEmpty()) {
-			System.out.println("Cached " + this.cachedBuffers.size() + " blockes");
-			System.out.println(this.currentBufferOffset);
+			final CachedBlock cachedBlock = new CachedBlock(this.cachedBuffers,
+				((this.blockCache.size() - 1) * this.blockCache.getBufferSize()) + this.currentBufferOffset);
+			this.blockCache.addCachedBlock(this.block, cachedBlock);
 		}
 
 		this.inputStream.close();
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
-	public void mark(int readlimit) {
-		System.out.println("mark");
+	public void mark(final int readlimit) {
+		throw new UnsupportedOperationException("mark");
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public boolean markSupported() {
-
-		System.out.println("markSupported");
-
-		return false;
+		throw new UnsupportedOperationException("markSupported");
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public int read() throws IOException {
-
-		System.out.println("read 1 ");
-
-		return 0;
+		throw new UnsupportedOperationException("read");
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public int read(final byte[] b) throws IOException {
-
 		return read(b, 0, b.length);
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public int read(byte[] b, int off, int len) throws IOException {
 
@@ -128,17 +172,28 @@ public class CachingInputStream extends InputStream {
 		return read;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public void reset() {
-
-		System.out.println("reset");
+		throw new UnsupportedOperationException("reset");
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
-	public long skip(long n) {
+	public long skip(long n) throws IOException {
 
-		System.out.println("skip");
+		final long retVal = this.inputStream.skip(n);
 
-		return 0L;
+		// When data is skipped, we cannot cache it
+		if (this.addToCache && retVal > 0L) {
+			clearCachedBuffers();
+			this.addToCache = false;
+		}
+
+		return retVal;
 	}
 }
