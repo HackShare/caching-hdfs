@@ -56,7 +56,7 @@ public class CachingInputStream extends InputStream {
 		while (it.hasNext()) {
 			this.blockCache.returnBuffer(it.next());
 		}
-		this.blockCache.clear();
+		this.cachedBuffers.clear();
 
 		if (this.currentBuffer != null) {
 			this.blockCache.returnBuffer(this.currentBuffer);
@@ -94,7 +94,8 @@ public class CachingInputStream extends InputStream {
 
 		if (!this.cachedBuffers.isEmpty()) {
 			final CachedBlock cachedBlock = new CachedBlock(this.cachedBuffers,
-				((this.blockCache.size() - 1) * this.blockCache.getBufferSize()) + this.currentBufferOffset);
+				((long) (this.cachedBuffers.size() - 1) * (long) this.blockCache.getBufferSize())
+					+ (long) this.currentBufferOffset);
 			this.blockCache.addCachedBlock(this.block, cachedBlock);
 		}
 

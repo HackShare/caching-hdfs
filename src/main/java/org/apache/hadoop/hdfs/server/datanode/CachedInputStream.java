@@ -31,7 +31,7 @@ public class CachedInputStream extends InputStream {
 
 	private final List<byte[]> cachedBuffers;
 
-	private final int length;
+	private final long length;
 
 	private byte[] currentBuffer = null;
 
@@ -41,7 +41,7 @@ public class CachedInputStream extends InputStream {
 
 	private int readInBuffer = 0;
 
-	private int readInTotal = 0;
+	private long readInTotal = 0;
 
 	CachedInputStream(final ExtendedBlock block, final BlockCache blockCache, final CachedBlock cachedBlock) {
 
@@ -143,14 +143,14 @@ public class CachedInputStream extends InputStream {
 	@Override
 	public long skip(final long n) throws IOException {
 
-		final int remainingData = this.length - this.readInTotal;
+		final long remainingData = this.length - this.readInTotal;
 		if (n >= remainingData) {
 			this.indexToNextBuffer = this.cachedBuffers.size();
 			this.currentBuffer = null;
 			return remainingData;
 		}
 
-		final int positionToSkipTo = this.readInTotal + (int) n;
+		final long positionToSkipTo = this.readInTotal + (int) n;
 		while (this.readInTotal < positionToSkipTo) {
 
 			if (allBuffersConsumed()) {
@@ -185,7 +185,7 @@ public class CachedInputStream extends InputStream {
 			}
 
 			this.currentBuffer = this.cachedBuffers.get(this.indexToNextBuffer++);
-			this.currentBufferLength = (this.indexToNextBuffer == size) ? (this.length - this.readInTotal)
+			this.currentBufferLength = (this.indexToNextBuffer == size) ? (int) (this.length - this.readInTotal)
 				: this.currentBuffer.length;
 			this.readInBuffer = 0;
 		}

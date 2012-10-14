@@ -36,9 +36,9 @@ final class CachedBlock {
 	/**
 	 * The overall size of the cached data in bytes.
 	 */
-	private final int length;
+	private final long length;
 
-	CachedBlock(final List<byte[]> cachedBuffers, final int length) {
+	CachedBlock(final List<byte[]> cachedBuffers, final long length) {
 		this.cachedBuffers = cachedBuffers;
 		this.length = length;
 	}
@@ -57,7 +57,7 @@ final class CachedBlock {
 	 * 
 	 * @return the overall size of the cached data in bytes
 	 */
-	int getLength() {
+	long getLength() {
 		return this.length;
 	}
 }
